@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools"]
+
+[project]
+name = "cppquant"
+authors = [
+    {name = "Patrick Garrett", email = "pgarrett@scripps.edu"},
+]
+description = "Simple tool to compare cpp quant results"
+readme = "README.md"
+requires-python = ">=3.9"
+dynamic = ["version"]
+license = {file = "LICENSE"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "peptacular==2.0.0",
+    "statsmodels",
+    "regex",
+    "scipy",
+    "setuptools",
+    "argparse",
+    "setuptools"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[project.scripts]
+cppcompare = "cppquant.main:run"
+
+[tool.setuptools.dynamic]
+version = {attr = "cppquant.__version__"}
