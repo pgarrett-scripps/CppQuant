@@ -22,6 +22,7 @@ from cppquant.census_util import build_census_results
 from cppquant.args_handler import parse_args
 from cppquant.fasta_util import map_ip2_fasta_id_to_sequence, read_fasta
 from cppquant.dclass import CensusResult, CPPResult, QuantResult, QuantResult, Pair, RatioResult, CompareRatio
+from cppquant.imputer import mean_impute, median_impute, min_impute, constant_impute, max_impute
 from cppquant.ratio_rollup import mean_ratio_rollup, median_ratio_rollup, intensity_sum_ratio_rollup
 
 
@@ -29,6 +30,7 @@ def build_cpp_results(census_results: Iterable[CensusResult]) -> Generator[CPPRe
     for census_result in census_results:
         for sline in census_result.s_lines:
             yield CPPResult(census_result.p_lines, sline)
+
 
 def build_quant_ratios(cpp_results: Iterable[CPPResult], fasta_map: Dict[str, str], regex_str: str, group: Any) -> \
         Generator[QuantResult, None, None]:
@@ -84,16 +86,26 @@ def to_ratio_results(quant_results: List[QuantResult], ratio_rollup: Callable, g
     return results
 
 
-def to_group_file(results: List[RatioResult], output_file: str):
+def to_group_file(results: List[RatioResult], output_file: str,
+                  add_peptides: bool = False, add_proteins: bool = False) -> None:
     if len(results) == 0:
         return
 
     data = [res.to_dict() for res in results]
-    pd.DataFrame(data).to_csv(output_file, index=False, float_format='%.5f')
+
+    if add_peptides:
+        for res, d in zip(results, data):
+            d['peptide_site_str'] = ';'.join(res.peptide_site_strs)
+
+    if add_proteins:
+        for res, d in zip(results, data):
+            d['protein_site_str'] = ';'.join(res.protein_site_strs)
+
+    df = pd.DataFrame(data)
+    df.to_csv(output_file, index=False, float_format='%.5f')
 
 
 def _assign_qvalues(pvalues: np.ndarray) -> np.ndarray:
-    # TODO: Check if this is the correct way to handle QValues
     """
     . code-block:: python
 
@@ -120,7 +132,8 @@ def _assign_qvalues(pvalues: np.ndarray) -> np.ndarray:
     return qvalues
 
 
-def to_compare_file(results: List[RatioResult], output_file: str, pairs: List[Pair]):
+def to_compare_file(results: List[RatioResult], output_file: str, pairs: List[Pair], add_peptides: bool = False,
+                    add_proteins: bool = False):
     if len(results) == 0:
         return
 
@@ -167,7 +180,17 @@ def to_compare_file(results: List[RatioResult], output_file: str, pairs: List[Pa
         compare.qvalue = qvalue
 
     data = [res.to_dict() for res in compare_results]
-    pd.DataFrame(data).to_csv(output_file, index=False, float_format='%.5f')
+
+    if add_peptides:
+        for res, d in zip(results, data):
+            d['peptide_site_str'] = ';'.join(res.peptide_site_strs)
+
+    if add_proteins:
+        for res, d in zip(results, data):
+            d['protein_site_str'] = ';'.join(res.protein_site_strs)
+
+    df = pd.DataFrame(data)
+    df.to_csv(output_file, index=False, float_format='%.5f')
 
 
 def run():
@@ -186,7 +209,7 @@ def run():
     os.makedirs(args.output_folder, exist_ok=True)
 
     # save the arguments to a file
-    with open(os.path.join(args.output_folder, args.args_file_name +'.txt'), 'w') as f:
+    with open(os.path.join(args.output_folder, args.args_file_name + '.txt'), 'w') as f:
         f.write(f'\n\nDate: {datetime.datetime.now()}')
 
         f.write(pprint.pformat(vars(args)))
@@ -210,6 +233,9 @@ def run():
             census_results = list(build_census_results(f))
             quant_results.extend(
                 list(build_quant_ratios(build_cpp_results(census_results), fasta_map, args.site_regex, group)))
+
+    print()
+    print('Filtering Quant Results...')
 
     num_quant_results = len(quant_results)
     quant_results = [qr for qr in quant_results if qr.is_valid]
@@ -244,8 +270,62 @@ def run():
         quant_results = [qr for qr in quant_results if not qr.is_single]
     print(f'Filtered {num_quant_results - len(quant_results)} single sites')
 
+    num_quant_results = len(quant_results)
+    if args.remove_decoy:
+        quant_results = [qr for qr in quant_results if not qr.is_decoy]
+    print(f'Filtered {num_quant_results - len(quant_results)} decoy sites')
+
+    num_quant_results = len(quant_results)
+    if args.remove_contaminant:
+        quant_results = [qr for qr in quant_results if not qr.is_contaminant]
+    print(f'Filtered {num_quant_results - len(quant_results)} contaminant sites')
+
     # remaining quant results
     print(f'Number of quant results: {len(quant_results)}')
+
+    # print missing light and heavy values
+
+    print()
+    # print number of double and single sites
+    num_double = len([qr for qr in quant_results if qr.is_double])
+    num_single = len([qr for qr in quant_results if qr.is_single])
+    print(f'Number of double sites: {num_double}')
+    print(f'Number of single sites: {num_single}')
+
+    print()
+    print('Imputing Missing Values...')
+    missing_light = len([qr for qr in quant_results if qr.light == 0.0])
+    missing_heavy = len([qr for qr in quant_results if qr.heavy == 0.0])
+    print(f'(Before) Missing light values: {missing_light}')
+    print(f'(Before) Missing heavy values: {missing_heavy}')
+
+    #  Impute missing values
+    if args.impute_method == 'mean':
+        imputer = partial(mean_impute, separate_single_double=args.separate_single_double,
+                          separate_light_heavy=args.separate_single_double)
+    elif args.impute_method == 'median':
+        imputer = partial(median_impute, separate_single_double=args.separate_single_double,
+                          separate_light_heavy=args.separate_single_double)
+    elif args.impute_method == 'min':
+        imputer = partial(min_impute, separate_single_double=args.separate_single_double,
+                          separate_light_heavy=args.separate_single_double)
+    elif args.impute_method == 'max':
+        imputer = partial(max_impute, separate_single_double=args.separate_single_double,
+                          separate_light_heavy=args.separate_single_double)
+    elif args.impute_method == 'constant':
+        imputer = partial(constant_impute, separate_single_double=args.separate_single_double,
+                          separate_light_heavy=args.separate_single_double, constant=args.impute_constant)
+    elif args.impute_method == 'none':
+        imputer = lambda x: None
+    else:
+        raise ValueError(f'Invalid impute method {args.impute_method}')
+
+    imputer(quant_results)
+
+    missing_light = len([qr for qr in quant_results if qr.light == 0.0])
+    missing_heavy = len([qr for qr in quant_results if qr.heavy == 0.0])
+    print(f'(After) Missing light values: {missing_light}')
+    print(f'(After) Missing heavy values: {missing_heavy}')
 
     if args.rollup_method == 'mean':
         ratio_rollup = partial(mean_ratio_rollup, inf_replacement=args.inf_replacement, razor=args.razor)
@@ -258,23 +338,25 @@ def run():
 
     quant_results.sort(key=lambda x: (x.ip2_sequence, group))
 
-    to_results_file(quant_results,  str(os.path.join(args.output_folder, args.results_file_name + '.csv')))
+    to_results_file(quant_results, str(os.path.join(args.output_folder, args.results_file_name + '.csv')))
 
     psm_ratios = to_ratio_results(quant_results, ratio_rollup, args.psm_groupby)
     peptide_ratios = to_ratio_results(quant_results, ratio_rollup, args.peptide_groupby)
     protein_ratios = to_ratio_results(quant_results, ratio_rollup, args.protein_groupby)
 
-    to_group_file(psm_ratios, str(os.path.join(args.output_folder, args.psm_file_name + '.csv')))
-    to_group_file(peptide_ratios, str(os.path.join(args.output_folder, args.peptide_file_name + '.csv')))
-    to_group_file(protein_ratios, str(os.path.join(args.output_folder, args.protein_file_name + '.csv')))
+    to_group_file(psm_ratios, str(os.path.join(args.output_folder, args.psm_file_name + '.csv')), add_proteins=True)
+    to_group_file(peptide_ratios, str(os.path.join(args.output_folder, args.peptide_file_name + '.csv')), add_proteins=True)
+    to_group_file(protein_ratios, str(os.path.join(args.output_folder, args.protein_file_name + '.csv')), add_peptides=True)
 
-    to_compare_file(psm_ratios, str(os.path.join(args.output_folder, args.psm_file_name + '_compare_.csv')), args.pairs)
+    to_compare_file(psm_ratios, str(os.path.join(args.output_folder, args.psm_file_name + '_compare_.csv')),
+                    args.pairs, add_proteins=True)
     to_compare_file(peptide_ratios, str(os.path.join(args.output_folder, args.peptide_file_name + '_compare.csv')),
-                    args.pairs)
+                    args.pairs, add_proteins=True)
     to_compare_file(protein_ratios, str(os.path.join(args.output_folder, args.protein_file_name + '_compare.csv')),
-                    args.pairs)
+                    args.pairs, add_peptides=True)
+
 
 
 if __name__ == '__main__':
+    # TODO: Maybe add a 1 sample ttest if there is only a single value for one of the compare groups
     run()
-

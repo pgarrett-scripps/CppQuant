@@ -75,6 +75,10 @@ def parse_args():
                                 help='Remove peptides with regex sites.')
     filter_options.add_argument('--remove_single', action='store_true',
                                 help='Remove peptides with regex site')
+    filter_options.add_argument('--remove_decoy', action='store_true',
+                                help='Remove peptides associated with all "reverse" proteins.')
+    filter_options.add_argument('--remove_contaminant', action='store_true',
+                                help='Remove peptides associated with any "contaminant" proteins.')
     filter_options.add_argument('--keep_missing_values', action='store_true',
                                 help='Keep missing datapoints (Its recommended to keep this off). '
                                      'A datapoint is considered missing if it is missing both'
@@ -116,7 +120,7 @@ def parse_args():
                                   help='The grouping criteria for Peptides, for group comparison the group column is '
                                        'required')
     grouping_options.add_argument('--protein_groupby',
-                                  default='protein_site_str;charge;group',
+                                  default='protein_site_str;group',
                                   type=parse_groupby_columns,
                                   help='The grouping criteria for Proteins, for group comparison the group column is '
                                        'required')
@@ -143,5 +147,17 @@ def parse_args():
                                 help='Use razor method to rollup ratios. Counts the number of real, pos inf and neg '
                                      'inf ratios, and keeps only the majority type. If there is a tie, '
                                      'the real ratio wins.')
+
+    impute_options = parser.add_argument_group('Impute Options')
+    impute_options.add_argument('--impute_method', choices=['none', 'mean', 'median', 'min', 'max', 'constant'],
+                                default='none',
+                                help='Method to impute missing values. Default is none.')
+    impute_options.add_argument('--constant', type=float, default=0.0,
+                                help='Constant to replace missing values with if impute_method is constant.')
+    impute_options.add_argument('--separate_single_double', action='store_true',
+                                help='Impute single and double sites separately.')
+    impute_options.add_argument('--separate_light_heavy', action='store_true',
+                                help='Impute light and heavy sites separately.')
+
 
     return parser.parse_args()

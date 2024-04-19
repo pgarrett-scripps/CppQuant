@@ -202,6 +202,8 @@ class QuantResult:
 
     # Afterwards, since it is not known at the time of creation
     is_duplicate: bool = None
+    imputed_light: float = None
+    imputed_heavy: float = None
 
     @property
     def total_intensity(self) -> float:
@@ -260,8 +262,8 @@ class QuantResult:
         return self.light == 0.0 and self.heavy == 0.0
 
     @property
-    def duplicate_key(self) -> bool:
-        return (self.filename, self.scannr)
+    def duplicate_key(self) -> Tuple[str, int]:
+        return self.filename, self.scannr
 
     @property
     def loci(self) -> List[str]:
@@ -270,6 +272,10 @@ class QuantResult:
     @property
     def is_decoy(self) -> bool:
         return all('reverse' in protein.lower() for protein in self.loci)
+
+    @property
+    def is_contaminant(self) -> bool:
+        return any('contaminant' in protein for protein in self.loci)
 
     @property
     def is_double(self) -> bool:
@@ -281,15 +287,22 @@ class QuantResult:
 
     @property
     def light(self) -> float:
+
+        if self.imputed_light is not None:
+            return self.imputed_light
+
         return self.cpp_result.light[self.cpp_result_index]
 
     @property
     def heavy(self) -> float:
+        if self.imputed_heavy is not None:
+            return self.imputed_heavy
+
         return self.cpp_result.heavy[self.cpp_result_index]
 
     @cached_property
     def ratio(self) -> float:
-        return self.heavy / self.light
+        return self.light / self.heavy
 
     @cached_property
     def log2_ratio(self) -> float:
@@ -401,6 +414,36 @@ class RatioResult:
     def non_group_key_labels(self) -> tuple[Any, ...]:
         return tuple([l for l, v in zip(self.grouping, self.grouping_vals) if l != 'group'])
 
+    @property
+    def ip2_sequences(self) -> List[str]:
+        if not self.is_valid:
+            return []
+        return list(set([qr.ip2_sequence for qr in self.quant_results]))
+
+    @property
+    def proforma_sequences(self) -> List[str]:
+        if not self.is_valid:
+            return []
+        return list(set([qr.proforma_sequence for qr in self.quant_results]))
+
+    @property
+    def unmodified_sequences(self) -> List[str]:
+        if not self.is_valid:
+            return []
+        return list(set([qr.unmodified_sequence for qr in self.quant_results]))
+
+    @property
+    def peptide_site_strs(self) -> List[str]:
+        if not self.is_valid:
+            return []
+        return list(set([qr.peptide_site_str for qr in self.quant_results]))
+
+    @property
+    def protein_site_strs(self) -> List[str]:
+        if not self.is_valid:
+            return []
+        return list(set([qr.protein_site_str for qr in self.quant_results]))
+
 
 @dataclass
 class CompareRatio:
@@ -503,7 +546,7 @@ class CompareRatio:
     @property
     def cnt(self) -> int:
         if not self.is_valid:
-            return np.nan
+            return 0
 
         return int(self.group1_ratio.cnt + self.group2_ratio.cnt)
 
@@ -532,3 +575,30 @@ class CompareRatio:
 
         d = {**d1, **d2}
         return d
+
+    def _get_quant_ratio_attribute(self, attribute: str) -> Any:
+        if not self.is_valid:
+            return None
+
+        assert self.group2_ratio.__getattribute__(attribute) == self.group1_ratio.__getattribute__(attribute)
+        return self.group1_ratio.__getattribute__(attribute)
+
+    @property
+    def ip2_sequences(self) -> List[str]:
+        return self._get_quant_ratio_attribute('ip2_sequences')
+
+    @property
+    def proforma_sequences(self) -> List[str]:
+        return self._get_quant_ratio_attribute('proforma_sequences')
+
+    @property
+    def unmodified_sequences(self) -> List[str]:
+        return self._get_quant_ratio_attribute('unmodified_sequences')
+
+    @property
+    def peptide_site_strs(self) -> List[str]:
+        return self._get_quant_ratio_attribute('peptide_site_strs')
+
+    @property
+    def protein_site_strs(self) -> List[str]:
+        return self._get_quant_ratio_attribute('protein_site_strs')

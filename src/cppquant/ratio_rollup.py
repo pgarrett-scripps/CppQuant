@@ -4,7 +4,6 @@ import numpy as np
 
 from cppquant.dclass import QuantResult
 
-
 def razor_rollup(ratios: np.ndarray) -> np.ndarray:
     """
     If the majority of values are real numbers, return a list of real numbers.
@@ -46,7 +45,7 @@ def mean_ratio_rollup(results: list[QuantResult], inf_replacement: Optional[floa
     log2_ratios[neg_inf_idx] = -inf_replacement
 
     mean = np.nanmean(log2_ratios)
-    std = np.nanstd(log2_ratios)
+    std = np.nanstd(log2_ratios, ddof=1)
     non_nan_count = np.count_nonzero(~np.isnan(log2_ratios))
     return mean, std, non_nan_count
 
@@ -72,7 +71,7 @@ def median_ratio_rollup(results: list[QuantResult], inf_replacement: Optional[fl
     log2_ratios[neg_inf_idx] = -inf_replacement
 
     mean = np.nanmedian(log2_ratios)
-    std = np.nanstd(log2_ratios)
+    std = np.nanstd(log2_ratios, ddof=1)
     non_nan_count = np.count_nonzero(~np.isnan(log2_ratios))
     return mean, std, non_nan_count
 
