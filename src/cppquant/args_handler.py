@@ -90,7 +90,6 @@ def parse_args():
                                 'same filename and scan number. The data is first sorted based on intensity, so that only '
                                 'the highest intensity datapoint is kept.')
 
-
     output_options = parser.add_argument_group('Output Options')
     output_options.add_argument('--output_folder', default='.',
                                 help='Output folder. Default is the current directory.')

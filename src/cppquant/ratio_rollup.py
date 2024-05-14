@@ -4,6 +4,7 @@ import numpy as np
 
 from cppquant.dclass import QuantResult
 
+
 def razor_rollup(ratios: np.ndarray) -> np.ndarray:
     """
     If the majority of values are real numbers, return a list of real numbers.
@@ -50,7 +51,8 @@ def mean_ratio_rollup(results: list[QuantResult], inf_replacement: Optional[floa
     return mean, std, non_nan_count
 
 
-def median_ratio_rollup(results: list[QuantResult], inf_replacement: Optional[float], razor: bool) -> (float, float, int):
+def median_ratio_rollup(results: list[QuantResult], inf_replacement: Optional[float], razor: bool) -> (
+float, float, int):
     """
     Calculate the mean of the log2 ratios, and the standard deviation.
 

@@ -10,7 +10,7 @@ import os
 import pprint
 from functools import partial
 from itertools import groupby
-from typing import List, Dict, Generator, Any, Iterable, IO, Optional, Callable
+from typing import List, Dict, Generator, Any, Iterable, Callable
 
 import datetime
 import numpy as np
@@ -21,7 +21,7 @@ from statsmodels.stats.multitest import multipletests
 from cppquant.census_util import build_census_results
 from cppquant.args_handler import parse_args
 from cppquant.fasta_util import map_ip2_fasta_id_to_sequence, read_fasta
-from cppquant.dclass import CensusResult, CPPResult, QuantResult, QuantResult, Pair, RatioResult, CompareRatio
+from cppquant.dclass import CensusResult, CPPResult, QuantResult, Pair, RatioResult, CompareRatio
 from cppquant.imputer import mean_impute, median_impute, min_impute, constant_impute, max_impute
 from cppquant.ratio_rollup import mean_ratio_rollup, median_ratio_rollup, intensity_sum_ratio_rollup
 
@@ -193,6 +193,32 @@ def to_compare_file(results: List[RatioResult], output_file: str, pairs: List[Pa
     df.to_csv(output_file, index=False, float_format='%.5f')
 
 
+def get_intensity_per_file(quant_results: List[QuantResult]):
+    intensity_per_file = {}
+    for qr in quant_results:
+        if qr.filename not in intensity_per_file:
+            intensity_per_file[qr.filename] = []
+        intensity_per_file[qr.filename].append(qr.total_intensity)
+
+    means = []
+    medians = []
+    stds = []
+    for fn in intensity_per_file:
+        means.append(np.mean(intensity_per_file[fn]))
+        medians.append(np.median(intensity_per_file[fn]))
+        stds.append(np.std(intensity_per_file[fn]))
+
+    means = np.array(means)
+    medians = np.array(medians)
+    stds = np.array(stds)
+
+    means = means / np.max(means)
+    medians = medians / np.max(medians)
+    stds = stds / np.max(stds)
+    for i, fn in enumerate(intensity_per_file):
+        print(f'File: {fn} - Mean: {means[i]:.2f}, Median: {medians[i]:.2f}, Std: {stds[i]:.2f}')
+
+
 def run():
     args = parse_args()
 
@@ -231,8 +257,9 @@ def run():
 
         with open(file_path, 'r') as f:
             census_results = list(build_census_results(f))
-            quant_results.extend(
-                list(build_quant_ratios(build_cpp_results(census_results), fasta_map, args.site_regex, group)))
+            for qr in build_quant_ratios(build_cpp_results(census_results), fasta_map, args.site_regex, group):
+                qr.filename = file_base_name
+                quant_results.append(qr)
 
     print()
     print('Filtering Quant Results...')
@@ -337,6 +364,8 @@ def run():
         raise ValueError(f'Invalid rollup method {args.rollup_method}')
 
     quant_results.sort(key=lambda x: (x.ip2_sequence, group))
+
+    get_intensity_per_file(quant_results)
 
     to_results_file(quant_results, str(os.path.join(args.output_folder, args.results_file_name + '.csv')))
 

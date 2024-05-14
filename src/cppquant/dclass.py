@@ -27,11 +27,18 @@ class Pair:
 
 @dataclass
 class Line(ABC):
+    """
+    This class stores only a single reference to the column values and the column index. This is preferable to storing
+    the entire row as a dictionary, as it is more memory efficient and faster.
+    """
     _column_index: Dict[str, int]
     _values: List[Any]
 
     def __getitem__(self, item: str) -> Any:
         return process_value(self._values[self._column_index[item]])
+
+    def __setitem__(self, key: str, value: Any):
+        self._values[self._column_index[key]] = value
 
     @property
     def columns(self) -> List[str]:
@@ -44,62 +51,86 @@ class Line(ABC):
 
 @dataclass
 class SequenceLine(Line):
-    peak_area_light_label: str = 'PEAK_AREA_L'
-    peak_area_medium_label: str = 'PEAK_AREA_M'
-    peak_area_heavy_label: str = 'PEAK_AREA_H'
-    sequence_label: str = 'SEQUENCE'
-    charge_state_label: str = 'CS'
-    scan_number_label: str = 'SCAN'
-    filename_label: str = 'FILE_NAME'
-    xcorr_label: str = 'XCorr'
 
     @property
     def light_peak_area(self) -> float:
-        if self[self.peak_area_light_label] is None or math.isnan(self[self.peak_area_light_label]):
+        if self['PEAK_AREA_L'] is None or math.isnan(self['PEAK_AREA_L']):
             return 0.0
-        return float(self[self.peak_area_light_label])
+        return float(self['PEAK_AREA_L'])
+
+    @light_peak_area.setter
+    def light_peak_area(self, value: float):
+        self['PEAK_AREA_L'] = value
 
     @property
     def medium_peak_area(self) -> float:
-        if self[self.peak_area_medium_label] is None or math.isnan(self[self.peak_area_medium_label]):
+        if self['PEAK_AREA_M'] is None or math.isnan(self['PEAK_AREA_M']):
             return 0.0
-        return float(self[self.peak_area_medium_label])
+        return float(self['PEAK_AREA_M'])
+
+    @medium_peak_area.setter
+    def medium_peak_area(self, value: float):
+        self['PEAK_AREA_M'] = value
 
     @property
     def heavy_peak_area(self) -> float:
-        if self[self.peak_area_heavy_label] is None or math.isnan(self[self.peak_area_heavy_label]):
+        if self['PEAK_AREA_H'] is None or math.isnan(self['PEAK_AREA_H']):
             return 0.0
-        return float(self[self.peak_area_heavy_label])
+        return float(self['PEAK_AREA_H'])
+
+    @heavy_peak_area.setter
+    def heavy_peak_area(self, value: float):
+        self['PEAK_AREA_H'] = value
 
     @property
     def peptide_sequence(self) -> str | None:
-        if self[self.sequence_label] is None:
+        if self['SEQUENCE'] is None:
             return None
-        return str(self[self.sequence_label])
+        return str(self['SEQUENCE'])
+
+    @peptide_sequence.setter
+    def peptide_sequence(self, value: str):
+        self['SEQUENCE'] = value
 
     @property
     def peptide_charge(self) -> int | None:
-        if self[self.charge_state_label] is None:
+        if self['CS'] is None:
             return None
-        return int(self[self.charge_state_label])
+        return int(self['CS'])
+
+    @peptide_charge.setter
+    def peptide_charge(self, value: int):
+        self['CS'] = value
 
     @property
     def scannr(self) -> int | None:
-        if self[self.scan_number_label] is None:
+        if self['SCAN'] is None:
             return None
-        return int(self[self.scan_number_label])
+        return int(self['SCAN'])
+
+    @scannr.setter
+    def scannr(self, value: int):
+        self['SCAN'] = value
 
     @property
     def filename(self) -> str | None:
-        if self[self.filename_label] is None:
+        if self['FILE_NAME'] is None:
             return None
-        return str(self[self.filename_label])
+        return str(self['FILE_NAME'])
+
+    @filename.setter
+    def filename(self, value: str):
+        self['FILE_NAME'] = value
 
     @property
     def xcorr(self) -> float | None:
-        if self[self.xcorr_label] is None:
+        if self['XCorr'] is None:
             return None
-        return float(self[self.xcorr_label])
+        return float(self['XCorr'])
+
+    @xcorr.setter
+    def xcorr(self, value: float):
+        self['XCorr'] = value
 
 
 @dataclass
@@ -114,11 +145,13 @@ class SLine(SequenceLine):
 
 @dataclass
 class PLine(Line):
-    protein_label: str = 'LOCUS'
-
     @property
     def locus(self) -> str | None:
-        return str(self[self.protein_label])
+        return str(self['LOCUS'])
+
+    @locus.setter
+    def locus(self, value: str):
+        self['LOCUS'] = value
 
 
 @dataclass
@@ -191,6 +224,22 @@ class CPPResult:
 
         return loci
 
+    @property
+    def scannr(self) -> int:
+        return self.s_line.scannr
+
+    @property
+    def filename(self) -> str:
+        return self.s_line.filename
+
+    @filename.setter
+    def filename(self, value: str):
+        self.s_line.filename = value
+
+    @property
+    def charge(self) -> int:
+        return self.s_line.peptide_charge
+
 
 @dataclass
 class QuantResult:
@@ -223,11 +272,15 @@ class QuantResult:
 
     @property
     def charge(self) -> int:
-        return self.cpp_result.s_line.peptide_charge
+        return self.cpp_result.charge
 
     @property
     def filename(self) -> str:
-        return self.cpp_result.s_line.filename
+        return self.cpp_result.filename
+
+    @filename.setter
+    def filename(self, value: str):
+        self.cpp_result.filename = value
 
     @property
     def scannr(self) -> int:
@@ -302,7 +355,7 @@ class QuantResult:
 
     @cached_property
     def ratio(self) -> float:
-        return self.light / self.heavy
+        return np.divide(self.light, self.heavy)
 
     @cached_property
     def log2_ratio(self) -> float:
