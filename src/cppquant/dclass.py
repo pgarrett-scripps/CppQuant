@@ -355,14 +355,38 @@ class QuantResult:
 
     @cached_property
     def ratio(self) -> float:
+
+        if self.heavy == 0.0 and self.light == 0.0:
+            return np.nan
+
+        if self.heavy == 0.0:
+            return np.inf
+
+        if self.light == 0.0:
+            return 0.0
+
         return np.divide(self.light, self.heavy)
 
     @cached_property
     def log2_ratio(self) -> float:
+
+        if self.ratio == 0.0:
+            return -np.inf
+
+        if self.ratio == np.inf:
+            return np.inf
+
         return np.log2(self.ratio)
 
     @cached_property
     def log10_ratio(self) -> float:
+
+        if self.ratio == 0.0:
+            return -np.inf
+
+        if self.ratio == np.inf:
+            return np.inf
+
         return np.log10(self.ratio)
 
     @cached_property
@@ -437,12 +461,28 @@ class RatioResult:
         """
         return int(self._rollup[2])
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, add_peptides: False, add_proteins: False) -> Dict[str, Any]:
         d = {c: self._get_quant_result_attribute(c) for c in self.grouping}
+        d2 = self.to_value_dict(add_peptides, add_proteins)
+
+        for k, v in d2.items():
+            d[k] = v
+
+        return d
+
+    def to_value_dict(self, add_peptides: False, add_proteins: False) -> Dict[str, Any]:
+        d = {}
         d['log2_ratio'] = self.log2_ratio
         d['log2_ratio_std'] = self.log2_ratio_std
         d['cnt'] = self.cnt
         d['type'] = self.ratio_type
+
+        if add_peptides:
+            d['peptide_site_str'] = ';'.join(self.peptide_site_strs)
+
+        if add_proteins:
+            d['protein_site_str'] = ';'.join(self.protein_site_strs)
+
         return d
 
     def _get_quant_result_attribute(self, attribute: str) -> Any:
@@ -603,13 +643,25 @@ class CompareRatio:
 
         return int(self.group1_ratio.cnt + self.group2_ratio.cnt)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, add_peptides: False, add_proteins: False) -> Dict[str, Any]:
 
         d1 = {}
         for l, v in zip(self.grouping, self.grouping_vals):
             d1[l] = v
 
-        d2 = {
+        d2 = self.to_value_dict(add_peptides, add_proteins)
+
+        if add_peptides:
+            d2['peptide_site_str'] = ';'.join(self.peptide_site_strs)
+
+        if add_proteins:
+            d2['protein_site_str'] = ';'.join(self.protein_site_strs)
+
+        d = {**d1, **d2}
+        return d
+
+    def to_value_dict(self, add_peptides: False, add_proteins: False) -> Dict[str, Any]:
+        d = {
             'group1': self.group1,
             'group2': self.group2,
             'group1_log2_ratio': self.group1_log2_ratio,
@@ -626,32 +678,70 @@ class CompareRatio:
             'qvalue': self.qvalue
         }
 
-        d = {**d1, **d2}
+        if add_peptides:
+            d['peptide_site_str'] = ';'.join(self.peptide_site_strs)
+
+        if add_proteins:
+            d['protein_site_str'] = ';'.join(self.protein_site_strs)
+
         return d
-
-    def _get_quant_ratio_attribute(self, attribute: str) -> Any:
-        if not self.is_valid:
-            return None
-
-        assert self.group2_ratio.__getattribute__(attribute) == self.group1_ratio.__getattribute__(attribute)
-        return self.group1_ratio.__getattribute__(attribute)
 
     @property
     def ip2_sequences(self) -> List[str]:
-        return self._get_quant_ratio_attribute('ip2_sequences')
+        ip2_sequences = set()
+
+        if self.group1_ratio is not None:
+            ip2_sequences.update(self.group1_ratio.ip2_sequences)
+
+        if self.group2_ratio is not None:
+            ip2_sequences.update(self.group2_ratio.ip2_sequences)
+
+        return list(ip2_sequences)
 
     @property
     def proforma_sequences(self) -> List[str]:
-        return self._get_quant_ratio_attribute('proforma_sequences')
+        proforma_sequences = set()
+
+        if self.group1_ratio is not None:
+            proforma_sequences.update(self.group1_ratio.proforma_sequences)
+
+        if self.group2_ratio is not None:
+            proforma_sequences.update(self.group2_ratio.proforma_sequences)
+
+        return list(proforma_sequences)
+
 
     @property
     def unmodified_sequences(self) -> List[str]:
-        return self._get_quant_ratio_attribute('unmodified_sequences')
+        unmodified_sequences = set()
+        if self.group1_ratio is not None:
+            unmodified_sequences.update(self.group1_ratio.unmodified_sequences)
+
+        if self.group2_ratio is not None:
+            unmodified_sequences.update(self.group2_ratio.unmodified_sequences)
+
+        return list(unmodified_sequences)
 
     @property
     def peptide_site_strs(self) -> List[str]:
-        return self._get_quant_ratio_attribute('peptide_site_strs')
+        peptide_site_strs = set()
+        if self.group1_ratio is not None:
+            peptide_site_strs.update(self.group1_ratio.peptide_site_strs)
+
+        if self.group2_ratio is not None:
+            peptide_site_strs.update(self.group2_ratio.peptide_site_strs)
+
+        return list(peptide_site_strs)
 
     @property
     def protein_site_strs(self) -> List[str]:
-        return self._get_quant_ratio_attribute('protein_site_strs')
+        protein_site_strs = set()
+
+        if self.group1_ratio is not None:
+            protein_site_strs.update(self.group1_ratio.protein_site_strs)
+
+        if self.group2_ratio is not None:
+            protein_site_strs.update(self.group2_ratio.protein_site_strs)
+
+        return list(protein_site_strs)
+

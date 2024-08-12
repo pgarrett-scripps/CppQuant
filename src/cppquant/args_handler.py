@@ -106,6 +106,8 @@ def parse_args():
     output_options.add_argument('--protein_file_name', type=str, default='protein_cpp_groups',
                                 help='Output file for protein cpp results. Group files will have this name while group '
                                      'compare files will have this name + _compare')
+    output_options.add_argument('--format', choices=['wide', 'long', 'both'], default='long',
+                                help='Output format. Default is long.')
 
     grouping_options = parser.add_argument_group('Grouping Options')
     grouping_options.add_argument('--psm_groupby',

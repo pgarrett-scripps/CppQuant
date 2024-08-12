@@ -86,23 +86,44 @@ def to_ratio_results(quant_results: List[QuantResult], ratio_rollup: Callable, g
     return results
 
 
-def to_group_file(results: List[RatioResult], output_file: str,
-                  add_peptides: bool = False, add_proteins: bool = False) -> None:
+def to_group_file(results: List[RatioResult], output_file: str, add_peptides: bool = False, add_proteins: bool = False,
+                  format: str = 'long'):
     if len(results) == 0:
         return
 
-    data = [res.to_dict() for res in results]
+    grouping_cols = results[0].grouping
+    # remove the group column
+    grouping_cols = [col for col in grouping_cols if col != 'group']
 
-    if add_peptides:
-        for res, d in zip(results, data):
-            d['peptide_site_str'] = ';'.join(res.peptide_site_strs)
-
-    if add_proteins:
-        for res, d in zip(results, data):
-            d['protein_site_str'] = ';'.join(res.protein_site_strs)
+    data = [res.to_dict(add_peptides=add_peptides, add_proteins=add_proteins) for res in results]
 
     df = pd.DataFrame(data)
-    df.to_csv(output_file, index=False, float_format='%.5f')
+
+    if format == 'long' or format == 'both':
+        df.to_csv(output_file, index=False, float_format='%.5f')
+
+    if format == 'wide' or format == 'both':
+        values = list(results[0].to_value_dict(False, False).keys())
+
+        if add_peptides:
+            values.append('peptide_site_str')
+
+        if add_proteins:
+            grouping_cols.append('protein_site_str')
+
+        # Pivot the DataFrame
+        wide_df = df.pivot(index=grouping_cols, columns='group',
+                           values=values)
+
+        # Flatten the MultiIndex columns
+        wide_df.columns = ['_'.join(col[::-1]).strip() for col in wide_df.columns.values]
+
+        # Reset index if you want the index as a column
+        wide_df.reset_index(inplace=True)
+
+        # Save the wide DataFrame to a new CSV file (optional)
+        wide_df.to_csv(output_file.replace('.csv', '_wide.csv'), index=False)
+
 
 
 def _assign_qvalues(pvalues: np.ndarray) -> np.ndarray:
@@ -133,7 +154,7 @@ def _assign_qvalues(pvalues: np.ndarray) -> np.ndarray:
 
 
 def to_compare_file(results: List[RatioResult], output_file: str, pairs: List[Pair], add_peptides: bool = False,
-                    add_proteins: bool = False):
+                    add_proteins: bool = False, format: str = 'long'):
     if len(results) == 0:
         return
 
@@ -179,18 +200,61 @@ def to_compare_file(results: List[RatioResult], output_file: str, pairs: List[Pa
     for compare, qvalue in zip(compare_results, qvalues):
         compare.qvalue = qvalue
 
-    data = [res.to_dict() for res in compare_results]
-
-    if add_peptides:
-        for res, d in zip(results, data):
-            d['peptide_site_str'] = ';'.join(res.peptide_site_strs)
-
-    if add_proteins:
-        for res, d in zip(results, data):
-            d['protein_site_str'] = ';'.join(res.protein_site_strs)
+    data = [res.to_dict(add_peptides, add_proteins) for res in compare_results]
 
     df = pd.DataFrame(data)
-    df.to_csv(output_file, index=False, float_format='%.5f')
+
+    if format == 'long' or format == 'both':
+
+        df.to_csv(output_file, index=False, float_format='%.5f')
+
+    if format == 'wide' or format == 'both':
+        grouping_cols = list(compare_results[0].grouping)
+
+        # drop group1 and group2
+        values = ['log2_ratio_diff', 'diff_std', 'total_cnt', 'test_statistic', 'pvalue', 'qvalue']
+
+        if add_peptides:
+            values.append('peptide_site_str')
+
+        if add_proteins:
+            grouping_cols.append('protein_site_str')
+
+        # Pivot the DataFrame
+        wide_df = df.pivot(index=grouping_cols, columns=['group1', 'group2'],
+                           values=values)
+
+        # Flatten the MultiIndex columns
+        wide_df.columns = [f'{col[1]}_vs_{col[2]}_{col[0]}'.strip() for col in wide_df.columns.values]
+
+        # Reset index if you want the index as a column
+        wide_df.reset_index(inplace=True)
+
+        group1_df = df.pivot(index=grouping_cols, columns=['group1', 'group2'],
+                             values=['group1_log2_ratio', 'group1_std', 'group1_cnt'])
+
+        group1_df.columns = [f'{col[1]}_{col[0]}'.strip().replace('_group1', '') for col in group1_df.columns.values]
+        group1_df.reset_index(inplace=True)
+
+        # drop columns which are repeated
+        group1_df = group1_df.loc[:, ~group1_df.columns.duplicated()]
+        group1_df.reset_index(inplace=True)
+
+        group2_df = df.pivot(index=grouping_cols, columns=['group1', 'group2'],
+                             values=['group2_log2_ratio', 'group2_std', 'group2_cnt'])
+
+        group2_df.columns = [f'{col[2]}_{col[0]}'.strip().replace('_group2', '') for col in group2_df.columns.values]
+        group2_df.reset_index(inplace=True)
+
+        # drop columns which are repeated
+        group2_df = group2_df.loc[:, ~group2_df.columns.duplicated()]
+        group2_df.reset_index(inplace=True)
+
+        wide_df = pd.merge(wide_df, group1_df, on=grouping_cols)
+        wide_df = pd.merge(wide_df, group2_df, on=grouping_cols)
+
+        # Save the wide DataFrame to a new CSV file (optional)
+        wide_df.to_csv(output_file.replace('.csv', '_wide.csv'), index=False)
 
 
 def get_intensity_per_file(quant_results: List[QuantResult]):
@@ -216,7 +280,7 @@ def get_intensity_per_file(quant_results: List[QuantResult]):
     medians = medians / np.max(medians)
     stds = stds / np.max(stds)
     for i, fn in enumerate(intensity_per_file):
-        print(f'File: {fn} - Mean: {means[i]:.2f}, Median: {medians[i]:.2f}, Std: {stds[i]:.2f}')
+        print(f'File: {fn} - Mean: {means[i]:.5f}, Median: {medians[i]:.5f}, Std: {stds[i]:.5f}')
 
 
 def run():
@@ -373,17 +437,19 @@ def run():
     peptide_ratios = to_ratio_results(quant_results, ratio_rollup, args.peptide_groupby)
     protein_ratios = to_ratio_results(quant_results, ratio_rollup, args.protein_groupby)
 
-    to_group_file(psm_ratios, str(os.path.join(args.output_folder, args.psm_file_name + '.csv')), add_proteins=True)
-    to_group_file(peptide_ratios, str(os.path.join(args.output_folder, args.peptide_file_name + '.csv')), add_proteins=True)
-    to_group_file(protein_ratios, str(os.path.join(args.output_folder, args.protein_file_name + '.csv')), add_peptides=True)
+    to_group_file(psm_ratios, str(os.path.join(args.output_folder, args.psm_file_name + '.csv')),
+                  add_proteins=True, format=args.format)
+    to_group_file(peptide_ratios, str(os.path.join(args.output_folder, args.peptide_file_name + '.csv')),
+                  add_proteins=True, format=args.format)
+    to_group_file(protein_ratios, str(os.path.join(args.output_folder, args.protein_file_name + '.csv')),
+                  add_peptides=True, format=args.format)
 
     to_compare_file(psm_ratios, str(os.path.join(args.output_folder, args.psm_file_name + '_compare_.csv')),
-                    args.pairs, add_proteins=True)
+                    args.pairs, add_proteins=True, format=args.format)
     to_compare_file(peptide_ratios, str(os.path.join(args.output_folder, args.peptide_file_name + '_compare.csv')),
-                    args.pairs, add_proteins=True)
+                    args.pairs, add_proteins=True, format=args.format)
     to_compare_file(protein_ratios, str(os.path.join(args.output_folder, args.protein_file_name + '_compare.csv')),
-                    args.pairs, add_peptides=True)
-
+                    args.pairs, add_peptides=True, format=args.format)
 
 
 if __name__ == '__main__':
